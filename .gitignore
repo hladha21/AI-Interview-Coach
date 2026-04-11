@@ -1,0 +1,12 @@
+﻿backend-node/node_modules/
+backend-node/.env
+backend-ai/venv/
+backend-ai/.env
+backend-ai/__pycache__/
+backend-ai/routers/__pycache__/
+backend-ai/services/__pycache__/
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+.DS_Store
+*.pyc
