@@ -18,8 +18,7 @@ export default function LoginPage() {
       await login(form.email, form.password);
       router.push("/dashboard");
     } catch (err) {
-      setError(err.error || err.message || "Invalid email or password. Please try again.");
-    } finally {
+      setError(err.message || "Invalid email or password. Please try again.");
       setLoading(false);
     }
   }

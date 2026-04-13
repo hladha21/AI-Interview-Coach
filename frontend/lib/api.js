@@ -5,14 +5,12 @@ const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_NODE_API,
 });
 
-// Attach JWT token to every request automatically
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// If 401, redirect to login
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -21,7 +19,9 @@ api.interceptors.response.use(
       localStorage.removeItem("user");
       window.location.href = "/login";
     }
-    return Promise.reject(err.response?.data || err);
+    // Throw the actual error message from backend
+    const message = err.response?.data?.error || err.message || "Something went wrong";
+    return Promise.reject(new Error(message));
   }
 );
 
