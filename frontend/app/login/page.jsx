@@ -2,11 +2,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { login } from "../../lib/auth";
+import axios from "axios";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -14,11 +15,21 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+
     try {
-      await login(form.email, form.password);
+      const res = await axios.post(
+        `${process.env.NEXT_PUBLIC_NODE_API}/auth/login`,
+        { email, password },
+        { headers: { "Content-Type": "application/json" } }
+      );
+
+      localStorage.setItem("token", res.data.token);
+      localStorage.setItem("user", JSON.stringify(res.data.user));
       router.push("/dashboard");
+
     } catch (err) {
-      setError(err.message || "Invalid email or password. Please try again.");
+      const msg = err.response?.data?.error || "Invalid email or password. Please try again.";
+      setError(msg);
       setLoading(false);
     }
   }
@@ -36,21 +47,25 @@ export default function LoginPage() {
             display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: 18, margin: "0 auto 16px"
           }}>🎯</div>
-          <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: 24, color: "#e8e8f0", marginBottom: 4 }}>
+          <h1 style={{
+            fontFamily: "'DM Serif Display', serif",
+            fontSize: 24, color: "#e8e8f0", marginBottom: 4
+          }}>
             Welcome back
           </h1>
-          <p style={{ color: "#9898b0", fontSize: 14 }}>Log in to continue practicing</p>
+          <p style={{ color: "#9898b0", fontSize: 14 }}>
+            Log in to continue practicing
+          </p>
         </div>
 
         {error && (
           <div style={{
-            padding: "12px 16px", borderRadius: 10, fontSize: 13, marginBottom: 16,
-            background: "#f8717115", color: "#f87171",
-            border: "1px solid #f8717140", lineHeight: 1.5,
+            padding: "12px 16px", borderRadius: 10, fontSize: 13,
+            marginBottom: 16, background: "#f8717120", color: "#f87171",
+            border: "1px solid #f87171", lineHeight: 1.5,
             display: "flex", alignItems: "center", gap: 8
           }}>
-            <span style={{ fontSize: 16 }}>⚠️</span>
-            {error}
+            ⚠️ {error}
           </div>
         )}
 
@@ -60,12 +75,13 @@ export default function LoginPage() {
             <input
               type="email"
               placeholder="your@email.com"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
               style={{
-                padding: "12px 16px", borderRadius: 12, fontSize: 14, outline: "none",
-                background: "#17171c", border: "1px solid #2e2e3a", color: "#e8e8f0",
+                padding: "12px 16px", borderRadius: 12, fontSize: 14,
+                outline: "none", background: "#17171c",
+                border: "1px solid #2e2e3a", color: "#e8e8f0",
                 fontFamily: "'DM Sans', sans-serif"
               }}
             />
@@ -76,23 +92,28 @@ export default function LoginPage() {
             <input
               type="password"
               placeholder="••••••••"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               required
               style={{
-                padding: "12px 16px", borderRadius: 12, fontSize: 14, outline: "none",
-                background: "#17171c", border: "1px solid #2e2e3a", color: "#e8e8f0",
+                padding: "12px 16px", borderRadius: 12, fontSize: 14,
+                outline: "none", background: "#17171c",
+                border: "1px solid #2e2e3a", color: "#e8e8f0",
                 fontFamily: "'DM Sans', sans-serif"
               }}
             />
           </div>
 
-          <button type="submit" disabled={loading} style={{
-            padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 500,
-            background: loading ? "#5a4fcf" : "#7c6af7", color: "#fff",
-            border: "none", cursor: loading ? "not-allowed" : "pointer",
-            marginTop: 8, fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s"
-          }}>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 500,
+              background: "#7c6af7", color: "#fff", border: "none",
+              cursor: loading ? "not-allowed" : "pointer",
+              marginTop: 8, fontFamily: "'DM Sans', sans-serif",
+              opacity: loading ? 0.7 : 1
+            }}>
             {loading ? "Logging in..." : "Log In"}
           </button>
         </form>
