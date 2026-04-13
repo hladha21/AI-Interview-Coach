@@ -18,7 +18,7 @@ export default function LoginPage() {
       await login(form.email, form.password);
       router.push("/dashboard");
     } catch (err) {
-      setError(err.message || "Login failed");
+      setError(err.error || err.message || "Invalid email or password. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -43,20 +43,26 @@ export default function LoginPage() {
           <p style={{ color: "#9898b0", fontSize: 14 }}>Log in to continue practicing</p>
         </div>
 
+        {error && (
+          <div style={{
+            padding: "12px 16px", borderRadius: 10, fontSize: 13, marginBottom: 16,
+            background: "#f8717115", color: "#f87171",
+            border: "1px solid #f8717140", lineHeight: 1.5,
+            display: "flex", alignItems: "center", gap: 8
+          }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            {error}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {error && (
-            <div style={{
-              padding: "10px 14px", borderRadius: 8, fontSize: 13,
-              background: "#f8717115", color: "#f87171", border: "1px solid #f8717130"
-            }}>{error}</div>
-          )}
-          {["email", "password"].map((field) => (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ color: "#9898b0", fontSize: 12 }}>Email</label>
             <input
-              key={field}
-              type={field === "password" ? "password" : "email"}
-              placeholder={field === "email" ? "Email" : "Password"}
-              value={form[field]}
-              onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+              type="email"
+              placeholder="your@email.com"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
               style={{
                 padding: "12px 16px", borderRadius: 12, fontSize: 14, outline: "none",
@@ -64,11 +70,29 @@ export default function LoginPage() {
                 fontFamily: "'DM Sans', sans-serif"
               }}
             />
-          ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ color: "#9898b0", fontSize: 12 }}>Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              required
+              style={{
+                padding: "12px 16px", borderRadius: 12, fontSize: 14, outline: "none",
+                background: "#17171c", border: "1px solid #2e2e3a", color: "#e8e8f0",
+                fontFamily: "'DM Sans', sans-serif"
+              }}
+            />
+          </div>
+
           <button type="submit" disabled={loading} style={{
             padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 500,
-            background: "#7c6af7", color: "#fff", border: "none", cursor: "pointer",
-            marginTop: 8, opacity: loading ? 0.6 : 1, fontFamily: "'DM Sans', sans-serif"
+            background: loading ? "#5a4fcf" : "#7c6af7", color: "#fff",
+            border: "none", cursor: loading ? "not-allowed" : "pointer",
+            marginTop: 8, fontFamily: "'DM Sans', sans-serif", transition: "all 0.15s"
           }}>
             {loading ? "Logging in..." : "Log In"}
           </button>
