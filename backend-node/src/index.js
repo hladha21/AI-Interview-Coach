@@ -10,6 +10,9 @@ const userRoutes = require("./routes/users");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Required for Render/cloud deployment behind a proxy
+app.set("trust proxy", 1);
+
 app.use(cors({ origin: "*", credentials: false }));
 app.use(express.json());
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
