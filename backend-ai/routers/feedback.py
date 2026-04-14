@@ -23,20 +23,59 @@ class FeedbackResponse(BaseModel):
 
 
 SYSTEM_PROMPT = """You are a strict and honest technical interviewer at a top tech company.
-You must evaluate interview answers critically and fairly.
-Your scores must reflect the actual quality of the answer:
-- A one word answer like "NO" or "yes" = score 1-2
-- A vague answer with no details = score 3-4
-- A basic answer with some correct points = score 5-6
-- A good answer with clear explanation = score 7-8
-- An excellent answer with examples and depth = score 9-10
+Evaluate interview answers critically and fairly.
 
-You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no text before or after the JSON."""
+Scoring guide:
+- 1 word or irrelevant answer = all scores 1-2, NO strengths
+- Vague answer with no details = scores 3-4, NO strengths
+- Basic answer with some correct points = scores 5-6, 1 strength max
+- Good answer with clear explanation = scores 7-8, 2 strengths
+- Excellent answer with examples and depth = scores 9-10, 2-3 strengths
+
+If the answer is poor, irrelevant, or too short — the strengths list MUST be empty [].
+Never give fake encouragement for bad answers.
+
+Respond with ONLY valid JSON. No markdown, no text before or after."""
+
+
+def _is_poor_answer(answer: str) -> bool:
+    """Check if answer is too short or clearly irrelevant."""
+    stripped = answer.strip()
+    words = stripped.split()
+    # Less than 5 words is definitely poor
+    if len(words) < 5:
+        return True
+    # Common one-word irrelevant answers
+    poor_answers = ["no", "yes", "idk", "i don't know", "dont know",
+                    "nothing", "none", "maybe", "ok", "okay", "hmm", "hi", "hello"]
+    if stripped.lower() in poor_answers:
+        return True
+    return False
 
 
 @router.post("/feedback", response_model=FeedbackResponse)
 async def get_feedback(req: FeedbackRequest):
-    answer_length = len(req.answer.strip().split())
+    answer_words = len(req.answer.strip().split())
+    is_poor = _is_poor_answer(req.answer)
+
+    # Immediately return harsh feedback for clearly poor answers
+    if is_poor:
+        return FeedbackResponse(
+            scores={"clarity": 1.0, "depth": 1.0, "relevance": 1.0, "confidence": 1.0},
+            summary=(
+                f"This answer does not address the question at all. "
+                f"A proper interview answer requires a detailed explanation "
+                f"with technical depth, examples, and clear reasoning. "
+                f"Simply writing '{req.answer.strip()}' shows no understanding of the topic."
+            ),
+            strengths=[],
+            improvements=[
+                "Write a complete answer of at least 4-5 sentences",
+                "Explain the concept clearly with technical details",
+                "Include a real-world example to demonstrate understanding",
+                "Show your thought process and reasoning"
+            ]
+        )
 
     user_message = f"""Evaluate this interview answer strictly and honestly.
 
@@ -44,19 +83,18 @@ Role: {req.role}
 Difficulty: {req.difficulty}
 Question: {req.question}
 Candidate's answer: {req.answer}
+Word count: {answer_words} words
 
-The answer has {answer_length} words.
+Rules:
+- If the answer is vague or lacks detail: scores 3-5, strengths must be []
+- If the answer is basic but correct: scores 5-6, max 1 strength
+- If the answer is good with explanation: scores 7-8, 2 strengths
+- If excellent with examples and depth: scores 9-10, 2-3 strengths
+- Strengths must ONLY mention things actually present in the answer
+- Improvements must mention specific things MISSING from the answer
+- Never give strengths for poor or vague answers
 
-Scoring rules:
-- Less than 10 words = clarity 1-3, depth 1-2
-- 10-30 words = clarity 3-5, depth 2-4
-- 31-80 words = clarity 5-7, depth 4-6
-- 81-150 words = clarity 6-8, depth 5-7
-- 150+ words with good content = clarity 7-9, depth 6-9
-
-Give specific feedback about THIS answer. Mention specific things the candidate said or didn't say.
-
-Respond with ONLY this JSON (replace all values):
+Respond with ONLY this JSON:
 {{
   "scores": {{
     "clarity": <integer 1-10>,
@@ -64,20 +102,21 @@ Respond with ONLY this JSON (replace all values):
     "relevance": <integer 1-10>,
     "confidence": <integer 1-10>
   }},
-  "summary": "<2-3 sentences evaluating this specific answer>",
-  "strengths": ["<specific strength from this answer>", "<another specific strength>"],
-  "improvements": ["<specific thing missing from this answer>", "<another specific improvement>"]
+  "summary": "<2-3 sentences about this specific answer>",
+  "strengths": [<empty if answer is poor, otherwise specific strengths>],
+  "improvements": ["<specific thing missing>", "<another specific improvement>"]
 }}"""
 
     try:
         raw = await call_llm(SYSTEM_PROMPT, user_message)
-        print(f">>> RAW RESPONSE: {raw[:600]}")
+        print(f">>> RAW: {raw[:600]}")
 
         raw = raw.strip()
         raw = re.sub(r"```json|```", "", raw).strip()
 
-        # Strategy 1: direct parse
         data = None
+
+        # Strategy 1: direct parse
         try:
             data = json.loads(raw)
         except Exception:
@@ -92,7 +131,7 @@ Respond with ONLY this JSON (replace all values):
             except Exception:
                 pass
 
-        # Strategy 3: extract individual scores with regex
+        # Strategy 3: regex extraction
         if not data:
             try:
                 scores = {}
@@ -100,69 +139,87 @@ Respond with ONLY this JSON (replace all values):
                     m = re.search(rf'"{field}"\s*:\s*(\d+(?:\.\d+)?)', raw)
                     if m:
                         scores[field] = float(m.group(1))
-
                 summary_m = re.search(r'"summary"\s*:\s*"([^"]+)"', raw)
-                strengths_m = re.findall(r'"([^"]{10,})"', raw)
-
                 if len(scores) == 4:
                     data = {
                         "scores": scores,
                         "summary": summary_m.group(1) if summary_m else "Answer evaluated.",
-                        "strengths": ["Good attempt at answering"],
-                        "improvements": ["Provide more specific details"]
+                        "strengths": [],
+                        "improvements": ["Provide more specific details", "Include examples"]
                     }
             except Exception:
                 pass
 
-        # Validate and clean scores
         if data and "scores" in data:
-            score_fields = ["clarity", "depth", "relevance", "confidence"]
-            for field in score_fields:
+            # Clamp scores
+            for field in ["clarity", "depth", "relevance", "confidence"]:
                 if field not in data["scores"]:
-                    data["scores"][field] = 5.0
-                val = float(data["scores"][field])
-                # Clamp between 1 and 10
-                data["scores"][field] = max(1.0, min(10.0, val))
+                    data["scores"][field] = 3.0
+                data["scores"][field] = max(1.0, min(10.0, float(data["scores"][field])))
 
-            if not data.get("strengths") or len(data["strengths"]) == 0:
-                data["strengths"] = ["Attempted to answer the question"]
-            if not data.get("improvements") or len(data["improvements"]) == 0:
-                data["improvements"] = ["Add more specific details and examples"]
+            avg_score = sum(data["scores"].values()) / 4
+
+            # If average score is low, force empty strengths
+            if avg_score < 5.0:
+                data["strengths"] = []
+
+            # Ensure improvements always exist
+            if not data.get("improvements"):
+                data["improvements"] = [
+                    "Provide a more detailed explanation",
+                    "Include specific examples"
+                ]
+
             if not data.get("summary"):
-                data["summary"] = "The answer was evaluated based on content."
+                data["summary"] = "The answer needs significant improvement."
 
-            print(f">>> FINAL SCORES: {data['scores']}")
+            print(f">>> SCORES: {data['scores']}, STRENGTHS: {data.get('strengths')}")
             return FeedbackResponse(**data)
 
     except Exception as e:
         print(f">>> ERROR: {e}")
 
-    # Last resort fallback based on word count
-    words = answer_length
-    if words < 10:
-        scores = {"clarity": 2.0, "depth": 1.0, "relevance": 2.0, "confidence": 1.5}
-        summary = "The answer is too short. A proper interview answer needs at least 3-4 sentences with clear explanation."
-        strengths = ["Attempted to respond to the question"]
-        improvements = ["Write a much more detailed answer", "Explain your reasoning step by step"]
-    elif words < 30:
-        scores = {"clarity": 4.0, "depth": 3.0, "relevance": 4.0, "confidence": 3.0}
-        summary = "The answer is too brief. More detail and examples are needed to demonstrate understanding."
-        strengths = ["Basic understanding shown", "Relevant response"]
-        improvements = ["Expand your answer significantly", "Add concrete examples from your experience"]
-    elif words < 80:
-        scores = {"clarity": 5.5, "depth": 4.5, "relevance": 5.5, "confidence": 5.0}
-        summary = "The answer covers the basics but lacks depth. A stronger answer would include specific examples and deeper explanation."
-        strengths = ["Covers the key concepts", "Clear structure"]
-        improvements = ["Add more technical depth", "Include a real-world example"]
+    # Fallback based on word count
+    if answer_words < 20:
+        return FeedbackResponse(
+            scores={"clarity": 2.0, "depth": 1.5, "relevance": 2.0, "confidence": 1.5},
+            summary="The answer is far too short to evaluate properly. Interview answers need detailed explanation with technical depth.",
+            strengths=[],
+            improvements=[
+                "Write at least 4-5 sentences",
+                "Explain the concept with technical details",
+                "Add a real-world example",
+                "Show your thought process"
+            ]
+        )
+    elif answer_words < 50:
+        return FeedbackResponse(
+            scores={"clarity": 4.0, "depth": 3.0, "relevance": 4.0, "confidence": 3.5},
+            summary="The answer is too brief and lacks depth. More detail and examples are needed.",
+            strengths=[],
+            improvements=[
+                "Expand your answer with more technical depth",
+                "Add a concrete real-world example",
+                "Explain the underlying concepts more clearly"
+            ]
+        )
+    elif answer_words < 100:
+        return FeedbackResponse(
+            scores={"clarity": 5.5, "depth": 4.5, "relevance": 5.5, "confidence": 5.0},
+            summary="The answer covers the basics but needs more depth and specific examples to stand out.",
+            strengths=["Covers the fundamental concepts"],
+            improvements=[
+                "Add more technical depth",
+                "Include a specific real-world example"
+            ]
+        )
     else:
-        scores = {"clarity": 7.0, "depth": 6.5, "relevance": 7.0, "confidence": 6.5}
-        summary = "Good detailed answer. Shows solid understanding of the topic with reasonable depth."
-        strengths = ["Detailed and well-structured answer", "Good coverage of the topic"]
-        improvements = ["Add edge cases or tradeoffs", "Mention specific tools or technologies"]
-
-    return FeedbackResponse(
-        scores=scores,
-        summary=summary,
-        strengths=strengths,
-        improvements=improvements
-    )
+        return FeedbackResponse(
+            scores={"clarity": 7.0, "depth": 6.5, "relevance": 7.0, "confidence": 6.5},
+            summary="Good detailed answer showing solid understanding. Could be improved with more specific examples.",
+            strengths=["Detailed and well-structured", "Good coverage of the topic"],
+            improvements=[
+                "Mention specific tradeoffs or edge cases",
+                "Add concrete examples from experience"
+            ]
+        )
